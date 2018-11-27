@@ -1,0 +1,111 @@
+omconfig system alertlog action=clear && clear && omconfig system esmlog action=clear
+clear
+#######################################################################
+#echo "Starting installation..."
+for a in {6..59}
+do
+rm -rf hddb$a.sh
+echo -n "badblocks -vw -e10 -o hdd$a.txt " >> hdd$a.sh
+MD=$(lsscsi -g |grep disk|grep dev|grep -m1 sg$a|awk '{print $6}')
+echo $MD >> hdd$a.sh
+echo "dd if=/dev/zero of=$MD bs=4096k" >> hdd$a.sh
+chmod +x hdd$a.sh
+done
+
+#######################################################################
+#echo "Generating HDD files..."
+for a in {6..59}
+do
+MD=$(lsscsi -g |grep disk|grep dev|grep -m1 sg$a|cut -b 54-64)
+echo "FILENAME=hdd$a.txt " >> hddb$a.sh
+echo "FILESIZE=\$(stat -c%s \"\$FILENAME\")" >> hddb$a.sh
+echo "if [[ \$FILESIZE > 0 ]] ; then" >> hddb$a.sh
+echo -n "hdparm -t " >> hddb$a.sh
+echo $MD >>  hddb$a.sh
+echo -n "smartctl -a " >> hddb$a.sh
+echo -n $MD >> hddb$a.sh
+echo "|grep Serial >> Failed_Log" >> hddb$a.sh
+echo "else" >> hddb$a.sh
+echo -n "smartctl -a " >> hddb$a.sh
+echo -n $MD >> hddb$a.sh
+echo "|grep Serial >> Success_Log" >> hddb$a.sh
+echo "fi" >> hddb$a.sh
+chmod +x hddb$a.sh
+done
+
+#######################################################################
+#echo "Generating Menu commands..."
+echo "omconfig system esmlog action=clear" >> start_delete.sh
+echo "/opt/MegaRAID/MegaCli/MegaCli -CfgForeign -Clear -aALL" >> start_delete.sh
+
+echo "if" >> check.sh
+echo "ps -a |grep 'badblocks\|dd' --silent" >> check.sh
+echo "then" >> check.sh
+echo "clear" >> check.sh
+echo "echo \"Please wait for all drives to finish wiping.\"" >> check.sh
+echo "echo \"\"" >> check.sh
+echo "./menu.sh" >> check.sh
+echo "else" >> check.sh
+echo "clear" >> check.sh
+echo "./start_delete.sh" >> check.sh
+echo "fi" >> check.sh
+chmod +x check.sh
+
+echo "if ps -a |grep 'badblocks\|dd' --silent; then clear; echo \"Please wait for all drives to finish wiping.\"; echo \"\"; ./menu.sh; else clear; echo \"Failed Drives Blinking\"; ./blink_failed.sh; ./menu.sh; fi" >> blink.sh
+
+chmod +x blink.sh
+
+for e in {6..59}
+do
+echo "./hdd$e.sh & " >> start_delete.sh
+echo "./hddb$e.sh 2>/dev/null &" >> blink_failed.sh
+done
+
+echo echo "" >> start_delete.sh
+echo echo "" >> blink_failed.sh
+chmod +x start_delete.sh
+chmod +x blink_failed.sh
+
+#######################################################################
+#echo "Populating Menu items..."
+echo "DETECTED=\$(lsscsi -g |grep -v 'enclosu\|DVD\|PERC\|iDRAC' -c)" >> menu.sh
+echo "COLUMNS=12" >> menu.sh
+echo "PS3='Please enter your choice: '" >> menu.sh
+echo "options=(\"Start-Test\" \"Check-Progress\" \"Blink-Failed\" )" >> menu.sh
+echo "select opt in "\${options[@]}"" >> menu.sh
+echo "do" >> menu.sh
+echo "case \$opt in" >> menu.sh
+echo "\"Start-Test\")" >> menu.sh
+echo "clear" >> menu.sh
+echo "./check.sh" >> menu.sh
+echo ";;" >> menu.sh
+echo "\"Check-Progress\")" >> menu.sh
+echo "clear" >> menu.sh
+echo "sg_scan" >> menu.sh
+echo "clear" >> menu.sh
+echo "echo -n \"Drives detected: \"" >> menu.sh
+echo "echo \$DETECTED" >> menu.sh
+echo "echo -n \"Drives checking for badblocks: \"" >> menu.sh
+echo "ps -a|grep 'badblocks' -c" >> menu.sh
+echo "echo -n \"Drives wiping: \"" >> menu.sh
+echo "ps -a|grep dd -c" >> menu.sh
+echo "echo -n \"Failed drives: \"" >> menu.sh
+echo "ls -l|grep txt|grep -v ' 0 ' -c" >> menu.sh
+echo "echo """ >> menu.sh
+echo "echo \"Please wait for all drives to finish wiping\"" >> menu.sh
+echo "echo \"before 'Blinking Failed Drives'\"" >> menu.sh
+echo "echo """ >> menu.sh
+echo "./menu.sh" >> menu.sh
+echo ";;" >> menu.sh
+echo "\"Blink-Failed\")" >> menu.sh
+echo "clear" >> menu.sh
+echo "if ls -l |grep txt --silent; then ./blink.sh; else echo \"Drives have not been tested\"; echo \"\"; fi" >> menu.sh
+echo "./menu.sh" >> menu.sh
+echo ";;" >> menu.sh
+echo "*) echo invalid option;;" >> menu.sh
+echo "esac" >> menu.sh
+echo "done" >> menu.sh
+chmod +x menu.sh
+clear
+./menu.sh
+
